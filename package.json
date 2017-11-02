@@ -1,0 +1,28 @@
+{
+  "name": "shs1-crypto",
+  "version": "1.0.0",
+  "description": "Implementation of the crypto part of the secret-handshake protocol version 1.",
+  "main": "index.js",
+  "author": "Aljoscha Meyer",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "chloride": "^2.2.7"
+  },
+  "scripts": {
+    "test": "xo && node test/test.js && shs1testclient test/client.js && shs1testserver test/server.js"
+  },
+  "xo": {
+    "space": true,
+    "esnext": true,
+    "envs": [
+      "node"
+    ],
+    "rules": {
+      "camelcase": "off"
+    }
+  },
+  "devDependencies": {
+    "xo": "^0.18.2",
+    "shs1-test": "^1.0.0"
+  }
+}
