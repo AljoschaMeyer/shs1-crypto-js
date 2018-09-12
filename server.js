@@ -51,8 +51,10 @@ module.exports.verifyMsg1 = (state, msg) => {
 // `state` is an object with (at least) the fields
 //   - `network_identifier`: Buffer<32 bytes> // shs_NETWORKIDENTIFIERBYTES
 //   - `server_ephemeral_pk`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
+//   - `client_ephemeral_pk`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
 module.exports.createMsg2 = state => {
-  const hmac = crypto_auth(state.server_ephemeral_pk, state.network_identifier);
+  const scalar_product = crypto_scalarmult(state.client_ephemeral_pk, state.server_ephemeral_sk);
+  const hmac = crypto_auth(state.server_ephemeral_pk, Buffer.concat([state.network_identifier, scalar_product]));
   return Buffer.concat([hmac, state.server_ephemeral_pk]);
 };
 

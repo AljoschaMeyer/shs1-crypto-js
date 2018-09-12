@@ -48,7 +48,8 @@ module.exports.verifyMsg2 = (state, msg) => {
   const hmac = msg.slice(0, 32);
   const server_ephemeral_pk = msg.slice(32, 64);
 
-  if (crypto_auth_verify(hmac, server_ephemeral_pk, state.network_identifier) !== 0) {
+  const scalar_product = crypto_scalarmult(state.client_ephemeral_sk, server_ephemeral_pk);
+  if (crypto_auth_verify(hmac, server_ephemeral_pk, Buffer.concat([state.network_identifier, scalar_product])) !== 0) {
     return false;
   }
 
