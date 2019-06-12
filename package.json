@@ -1,6 +1,6 @@
 {
   "name": "shs1-crypto",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Implementation of the crypto part of the secret-handshake protocol version 1.",
   "repository": {
     "type": "git",
