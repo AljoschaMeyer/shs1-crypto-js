@@ -2,6 +2,11 @@
   "name": "shs1-crypto",
   "version": "1.0.0",
   "description": "Implementation of the crypto part of the secret-handshake protocol version 1.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AljoschaMeyer/shs1-crypto-js.git"
+   },
+  "homepage": "https://github.com/AljoschaMeyer/shs1-crypto-js",
   "main": "index.js",
   "author": "Aljoscha Meyer",
   "license": "GPL-3.0",
