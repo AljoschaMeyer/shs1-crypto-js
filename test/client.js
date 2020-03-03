@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+
+// This file can be used to test the implementation against a global install of
+// https://www.npmjs.com/package/shs1-test
+// by running shs1testclient test/client.js
+
 const {createMsg1, verifyMsg2, createMsg3, verifyMsg4, clientOutcome} = require('../index.js');
 
 const network_identifier = Buffer.from(process.argv[2], 'hex');
