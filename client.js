@@ -5,11 +5,13 @@ const {
   crypto_hash_sha256,
   crypto_sign_ed25519_sk_to_curve25519,
   crypto_sign_ed25519_pk_to_curve25519,
-  crypto_secretbox_open_easy,
   crypto_sign_verify_detached,
-  crypto_sign_detached,
-  crypto_secretbox_easy
+  crypto_sign_detached
 } = require('chloride');
+const {
+  crypto_secretbox_easy,
+  crypto_secretbox_open_easy
+} = require('./chloride');
 
 /*
  * Implementation of the crypto the client needs to perform.
@@ -33,7 +35,7 @@ zeros.fill(0);
 //   - `client_ephemeral_pk`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
 module.exports.createMsg1 = state => {
   const hmac = crypto_auth(state.client_ephemeral_pk, state.network_identifier);
-  return Buffer.concat([hmac, state.client_ephemeral_pk]);
+  return Buffer.concat([state.client_ephemeral_pk, hmac]);
 };
 
 // Returns true iff `msg: Buffer<64 bytes>` is a valid msg2 for the given state.
@@ -44,15 +46,24 @@ module.exports.createMsg1 = state => {
 //
 // After successfully validating, this adds a field to `state`:
 //   - `server_ephemeral_pk`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
+//   - `shared_secret_ab`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
 module.exports.verifyMsg2 = (state, msg) => {
-  const hmac = msg.slice(0, 32);
-  const server_ephemeral_pk = msg.slice(32, 64);
+  if (msg.length !== 64) {
+    return false;
+  }
 
-  if (crypto_auth_verify(hmac, server_ephemeral_pk, state.network_identifier) !== 0) {
+  const server_ephemeral_pk = msg.slice(0, 32);
+  const hmac = msg.slice(32, 64);
+
+  const shared_secret_ab = crypto_scalarmult(state.client_ephemeral_sk, server_ephemeral_pk);
+  const auth_key = crypto_hash_sha256(Buffer.concat(state.network_identifier, shared_secret_ab));
+
+  if (crypto_auth_verify(hmac, server_ephemeral_pk, auth_key) !== 0) {
     return false;
   }
 
   state.server_ephemeral_pk = server_ephemeral_pk;
+  state.shared_secret_ab = shared_secret_ab;
 
   return true;
 };
@@ -67,14 +78,20 @@ module.exports.verifyMsg2 = (state, msg) => {
 //   - `client_ephemeral_sk`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
 //   - `server_longterm_pk`: Buffer<32 bytes> // crypto_sign_PUBLICKEYBYTES
 //   - `server_ephemeral_pk`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
+//   - `shared_secret_ab`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
 //
 // This function adds the following fields to `state`:
-//   - `shared_secret_ab`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
+//   - `handshake_id`: Buffer<32 bytes> // crypto_hash_sha256_BYTES
 //   - `shared_secret_aB`: Buffer<32 bytes> // crypto_scalarmult_curve25519_BYTES
 //   - `msg3_plaintext`: Buffer<96 bytes> // crypto_sign_BYTES + crypto_sign_PUBLICKEYBYTES
 module.exports.createMsg3 = state => {
-  const shared_secret_ab = crypto_scalarmult(state.client_ephemeral_sk, state.server_ephemeral_pk);
-  const shared_secret_ab_hashed = crypto_hash_sha256(shared_secret_ab);
+  const handshake_id = crypto_hash_sha256(
+    Buffer.concat(
+      state.shared_secret_ab,
+      state.client_ephemeral_pk,
+      state.server_ephemeral_pk
+    )
+  );
 
   const shared_secret_aB = crypto_scalarmult(
     state.client_ephemeral_sk,
@@ -84,21 +101,24 @@ module.exports.createMsg3 = state => {
   const signed = Buffer.concat([
     state.network_identifier,
     state.server_longterm_pk,
-    shared_secret_ab_hashed
+    handshake_id
   ]);
 
   const inner_signature = crypto_sign_detached(signed, state.client_longterm_sk);
 
-  const msg3_plaintext = Buffer.concat([inner_signature, state.client_longterm_pk]);
+  const extra_payload = Buffer.alloc(32, 0);
+  const msg3_plaintext = Buffer.concat([inner_signature, state.client_longterm_pk, extra_payload]);
 
   const msg3_secretbox_key = crypto_hash_sha256(Buffer.concat([
     state.network_identifier,
-    shared_secret_ab,
-    shared_secret_aB
+    state.shared_secret_ab,
+    shared_secret_aB,
+    state.client_ephemeral_pk,
+    state.server_ephemeral_pk
   ]));
 
+  state.handshake_id = handshake_id;
   state.msg3_plaintext = msg3_plaintext;
-  state.shared_secret_ab = shared_secret_ab;
   state.shared_secret_aB = shared_secret_aB;
 
   return crypto_secretbox_easy(msg3_plaintext, zeros, msg3_secretbox_key);
@@ -119,6 +139,10 @@ module.exports.createMsg3 = state => {
 // This function adds a field to `state`:
 //   - `msg4_secretbox_key_hash`: Buffer<32 bytes> // crypto_hash_sha256_BYTES
 module.exports.verifyMsg4 = (state, msg) => {
+  if (msg.length !== 80) {
+    return false;
+  }
+
   const shared_secret_Ab = crypto_scalarmult(
     crypto_sign_ed25519_sk_to_curve25519(state.client_longterm_sk),
     state.server_ephemeral_pk
@@ -128,7 +152,9 @@ module.exports.verifyMsg4 = (state, msg) => {
     state.network_identifier,
     state.shared_secret_ab,
     state.shared_secret_aB,
-    shared_secret_Ab
+    shared_secret_Ab,
+    state.client_ephemeral_pk,
+    state.server_ephemeral_pk
   ]));
 
   const msg4_plaintext = crypto_secretbox_open_easy(msg, zeros, msg4_secretbox_key);
@@ -138,13 +164,11 @@ module.exports.verifyMsg4 = (state, msg) => {
     return false;
   }
 
-  const shared_secret_ab_hashed = crypto_hash_sha256(state.shared_secret_ab); // Same as in createMsg3().
-
   // This is what the server must have used to obtain `msg4_plaintext`, the signature for `signed`.
   const signed = Buffer.concat([
     state.network_identifier,
     state.msg3_plaintext,
-    shared_secret_ab_hashed
+    state.handshake_id
   ]);
 
   if (!crypto_sign_verify_detached(msg4_plaintext, signed, state.server_longterm_pk)) {

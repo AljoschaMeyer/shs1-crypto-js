@@ -11,7 +11,8 @@
   "author": "Aljoscha Meyer",
   "license": "GPL-3.0",
   "dependencies": {
-    "chloride": "^2.2.7"
+    "chloride": "^2.2.7",
+    "sodium-universal": "^4.0.0"
   },
   "scripts": {
     "test": "xo && node test/test.js"
